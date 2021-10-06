@@ -1,0 +1,5 @@
+\documentclass{article}
+\usepackage{longtable}
+\newenvironment{env}{Heading&&& \\}{\hline \\}
+\begin{document}
+
