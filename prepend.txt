@@ -1,5 +1,5 @@
-\documentclass{article}
-\usepackage{longtable}
+\documentclass[preview]{standalone}
+\usepackage{longtable, geometry}
 \newenvironment{env}{Heading&&& \\}{\hline \\}
 \begin{document}
 

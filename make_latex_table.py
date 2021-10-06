@@ -4,15 +4,21 @@ from collections import OrderedDict
 from tabulate import tabulate
 import argparse
 import os
+import re
+
 
 def parse_input_file(input_file: str,
                      split_column_number: int = 63,
-                     skip_lines: list = [0, 132]) -> (OrderedDict, list):
+                     skip_lines: list = [0, 132],
+                     blacklist: list = [],
+                     random_data_cleaning: bool = True) -> (OrderedDict, list):
     """Parse input file
 
     :param input_file: file to parse
     :param split_column_number: column number where the second column starts
     :param skip_lines: list of 0-based lines to skip
+    :param blacklist: blacklist of items to exclude
+    :param random_data_cleaning: some random fixes for data weirdness
     :return:
     """
     with open(input_file, 'r') as f:
@@ -26,6 +32,14 @@ def parse_input_file(input_file: str,
 
             col1, col2 = (line[:split_column_number].strip(),
                           line[split_column_number:-1].strip())
+
+            if col1 in blacklist:
+                line_count = line_count + 1
+                continue
+
+            if random_data_cleaning:
+                col1 = re.sub('_', ' ', col1)  # no underscores in col1
+                col2 = re.sub('\(\s+(?=\d+)', '(', col2)  # change ( 2.3) to (2.3)
 
             if not col1:
                 if last_col1:
@@ -49,15 +63,28 @@ def split_into_labels_and_vals(these_values: list):
     return these_values[:half], these_values[half:]
 
 
-def make_latex_table(parsed_data: OrderedDict, ordered_keys: list, tablefmt) -> str:
+def make_latex_table(parsed_data: OrderedDict, ordered_keys: list, tablefmt,
+                     header: list, indent: str = '\hspace{3mm}') -> str:
     """Make LaTeX table from parsed data
     :param parsed_data: parsed data from parse_input_file
     :param ordered_keys: list of keys in order that they should appear in table
+    :param header: header for table
+    :param indent: text to prepend to indent items under subheading
     :return: str with LaTeX table
     """
     table = []
+    if header:
+        table.append(header)
     for this_key in ordered_keys:
         this_chunk = parsed_data[this_key]
+
+        # see if this is just TRUE/FALSE, if so, get rid of FALSE and report as 1 item
+        labels, values = split_into_labels_and_vals(this_chunk)
+        if sorted(labels) == sorted(['TRUE', 'FALSE']):
+            this_chunk = [values[i] for i in range(len(labels)) if labels[i] == 'TRUE']
+        if labels == ['FALSE'] and bool(re.search("\(\s*100.\d*\)", values[0])):  # get rid of FALSE 100%
+             this_chunk = ['0 (0)']
+
         if not this_chunk:
             print(f"empty chunk for {this_key}!")
         elif len(this_chunk) == 1:
@@ -67,7 +94,7 @@ def make_latex_table(parsed_data: OrderedDict, ordered_keys: list, tablefmt) -> 
                 raise RuntimeError(f"Got an odd number of values for key {this_key}")
             table.append([this_key, ""])  # header for this chunk of data
             labels, values = split_into_labels_and_vals(this_chunk)
-            new_rows = [["\t"+labels[i], values[i]] for i in range(len(labels))]
+            new_rows = [[indent+labels[i], values[i]] for i in range(len(labels))]
             table.extend(new_rows)
 
     return(tabulate(table, tablefmt=tablefmt))
@@ -89,6 +116,10 @@ if __name__ == '__main__':
                         help='column number where the second column starts')
     parser.add_argument('--skip_lines', type=str, default=[0, 132],
                         help='list of 0-based lines to skip')
+    parser.add_argument('--header', type=str, default=[],
+                        help='header for table')
+    parser.add_argument('--blacklist', type=str, default=['data_partner_id (mean (SD))'],
+                        help='blacklist')
     args = vars(parser.parse_args())
 
     for this_arg in ['input', 'prepend', 'append']:
@@ -97,10 +128,13 @@ if __name__ == '__main__':
 
     parsed_data, ordered_keys = parse_input_file(args['input'],
                                                  split_column_number=args['split_column_number'],
-                                                 skip_lines=args['skip_lines'])
+                                                 skip_lines=args['skip_lines'],
+                                                 blacklist=args['blacklist'])
 
     latex_table = make_latex_table(parsed_data, ordered_keys,
-                                   tablefmt=args['format'])
+                                   tablefmt=args['format'],
+                                   header=args['header'])
+
     with open(args['output'], 'wt') as out:
         if args['prepend']:
             prepend = open(args['prepend'], 'rt')
